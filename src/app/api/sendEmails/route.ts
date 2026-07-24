@@ -1,7 +1,5 @@
 import nodemailer from "nodemailer";
 import { NextRequest, NextResponse } from "next/server";
-import { OutputData } from "@editorjs/editorjs";
-import { convertToHtml } from "@/utils/editorjsParser";
 import { getSessionId } from "@/lib/session";
 import { getAccounts, saveAccount } from "@/lib/store";
 import { refreshAccessToken } from "@/lib/oauth";
@@ -88,7 +86,7 @@ export async function POST(req: NextRequest) {
       customSmtp,
       recipients,
       subject,
-      text,
+      html,
       useGreeting,
       delayMs = 3000,
     }: {
@@ -97,7 +95,7 @@ export async function POST(req: NextRequest) {
       customSmtp?: CustomSmtp;
       recipients: Recipient[];
       subject: string;
-      text: string;
+      html: string;
       useGreeting: boolean;
       delayMs?: number;
     } = body;
@@ -106,8 +104,7 @@ export async function POST(req: NextRequest) {
     if (!cleanRecipients.length) return NextResponse.json({ error: "Add at least one recipient" }, { status: 400 });
     if (!subject?.trim()) return NextResponse.json({ error: "Subject is required" }, { status: 400 });
 
-    const editorData: OutputData = JSON.parse(text || '{"blocks":[]}');
-    const htmlContent = convertToHtml(editorData);
+    const htmlContent = String(html || "");
     if (!htmlContent.trim()) return NextResponse.json({ error: "Email content is required" }, { status: 400 });
 
     let account: ConnectedAccount | undefined;

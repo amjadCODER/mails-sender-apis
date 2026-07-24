@@ -371,3 +371,55 @@ body {
   .campaign-card { border-radius: 0 !important; min-height: 100vh; }
   .access-card { padding: 26px 21px; border-radius: 24px; }
 }
+
+.html-editor-shell {
+  overflow: hidden;
+  border: 1px solid var(--manzor-line);
+  border-radius: 18px;
+  background: #fff;
+}
+
+.html-editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 8px;
+  border-bottom: 1px solid #eeeafd;
+  background: #faf9ff;
+}
+
+.html-visual-editor {
+  min-height: 360px;
+  padding: 24px;
+  outline: none;
+  line-height: 1.8;
+  color: #28194d;
+  background: #fff;
+}
+
+.html-code-editor {
+  width: 100%;
+  min-height: 420px;
+  resize: vertical;
+  border: 1px solid var(--manzor-line);
+  border-radius: 18px;
+  padding: 18px;
+  outline: none;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #20143f;
+  background: #fbfaff;
+}
+
+.html-code-editor:focus {
+  box-shadow: 0 0 0 3px rgba(124, 82, 238, .12);
+}
+
+.html-preview {
+  width: 100%;
+  min-height: 420px;
+  border: 1px solid var(--manzor-line);
+  border-radius: 18px;
+  background: white;
+}

@@ -2,9 +2,25 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type EditorJS from "@editorjs/editorjs";
 import { motion } from "framer-motion";
-import { CheckCircle2, Link2, Plus, Send, Trash2, Unplug, Upload } from "lucide-react";
+import {
+  Bold,
+  CheckCircle2,
+  Code2,
+  Eye,
+  Italic,
+  Link2,
+  List,
+  ListOrdered,
+  Plus,
+  Redo2,
+  Send,
+  Trash2,
+  Underline,
+  Undo2,
+  Unplug,
+  Upload,
+} from "lucide-react";
 import Papa from "papaparse";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -28,10 +44,23 @@ const providerLabels: Record<Provider, string> = {
   custom: "بريد مخصص",
 };
 
+const emptyTemplate = `<div dir="rtl" style="font-family:Arial,sans-serif;line-height:1.8;color:#28194d;padding:24px">
+  <h2 style="margin:0 0 16px">عنوان الحملة</h2>
+  <p style="margin:0">اكتب محتوى الرسالة هنا او الصق قالب HTML كامل</p>
+</div>`;
+
+function friendlyOAuthError(value: string) {
+  if (value.includes("GOOGLE_CLIENT_ID")) return "اعدادات ربط Google غير مكتملة";
+  if (value.includes("MICROSOFT_CLIENT_ID")) return "اعدادات ربط Microsoft غير مكتملة";
+  if (value.includes("ZOHO_CLIENT_ID")) return "اعدادات ربط Zoho غير مكتملة";
+  return value;
+}
+
 export default function EmailCampaignTool() {
   const [recipients, setRecipients] = useState<Recipient[]>([{ name: "", email: "" }]);
   const [subject, setSubject] = useState("");
-  const [text, setText] = useState("");
+  const [html, setHtml] = useState(emptyTemplate);
+  const [editorMode, setEditorMode] = useState<"visual" | "html" | "preview">("visual");
   const [provider, setProvider] = useState<Provider>("google");
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountId, setAccountId] = useState("");
@@ -41,24 +70,22 @@ export default function EmailCampaignTool() {
   const [progress, setProgress] = useState(0);
   const [sentCount, setSentCount] = useState(0);
   const [failedCount, setFailedCount] = useState(0);
-  const [persistentStoreConfigured, setPersistentStoreConfigured] = useState(true);
   const [customSmtp, setCustomSmtp] = useState({ host: "", port: "587", secure: false, username: "", password: "" });
-  const editorRef = useRef<EditorJS | null>(null);
+  const visualEditorRef = useRef<HTMLDivElement | null>(null);
 
   const loadAccounts = async () => {
     const response = await fetch("/api/accounts", { cache: "no-store" });
     const data = await response.json();
     setAccounts(data.accounts || []);
-    setPersistentStoreConfigured(Boolean(data.persistentStoreConfigured));
   };
 
   useEffect(() => {
-    loadAccounts().catch(() => toast.error("تعذر تحميل الحسابات المربوطة"));
+    loadAccounts().catch(() => toast.error("تعذر تحميل الحسابات"));
     const params = new URLSearchParams(window.location.search);
     const connected = params.get("connected");
     const oauthError = params.get("oauth_error");
-    if (connected) toast.success(`تم ربط ${providerLabels[connected as Provider]} بنجاح`);
-    if (oauthError) toast.error(oauthError);
+    if (connected) toast.success("تم ربط الحساب");
+    if (oauthError) toast.error(friendlyOAuthError(oauthError));
     if (connected || oauthError) window.history.replaceState({}, "", window.location.pathname);
   }, []);
 
@@ -67,49 +94,28 @@ export default function EmailCampaignTool() {
     if (provider !== "custom" && !matching.some((item) => item.id === accountId)) setAccountId(matching[0]?.id || "");
   }, [provider, accounts, accountId]);
 
-  const initializeEditor = async () => {
-    if (editorRef.current) return;
-    const EditorJSClass = (await import("@editorjs/editorjs")).default;
-    const Header = (await import("@editorjs/header")).default;
-    const List = (await import("@editorjs/list")).default;
-    const Checklist = (await import("@editorjs/checklist")).default;
-    const Quote = (await import("@editorjs/quote")).default;
-    const CodeTool = (await import("@editorjs/code")).default;
-    const InlineCode = (await import("@editorjs/inline-code")).default;
-    const Marker = (await import("@editorjs/marker")).default;
-    const Underline = (await import("@editorjs/underline")).default;
-    const ImageTool = (await import("@editorjs/image")).default;
-    const editor = new EditorJSClass({
-      holder: "editorjs",
-      autofocus: false,
-      tools: {
-        header: Header, list: List, checklist: Checklist, quote: Quote, code: CodeTool,
-        inlineCode: InlineCode, marker: Marker, underline: Underline,
-        image: {
-          class: ImageTool,
-          config: { uploader: { uploadByFile: (file: File) => new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = (event) => resolve({ success: 1, file: { url: event.target?.result } });
-            reader.readAsDataURL(file);
-          }) } },
-        },
-      },
-      onChange: async () => setText(JSON.stringify(await editor.save())),
-    });
-    editorRef.current = editor;
-  };
-
   useEffect(() => {
-    if (activeTab === "compose") initializeEditor();
-    return () => undefined;
-  }, [activeTab]);
+    if (editorMode === "visual" && visualEditorRef.current && visualEditorRef.current.innerHTML !== html) {
+      visualEditorRef.current.innerHTML = html;
+    }
+  }, [editorMode, html]);
+
+  const runEditorCommand = (command: string, value?: string) => {
+    visualEditorRef.current?.focus();
+    document.execCommand(command, false, value);
+    setHtml(visualEditorRef.current?.innerHTML || "");
+  };
 
   const connectProvider = (value: Exclude<Provider, "custom">) => {
     window.location.href = `/api/auth/${value}/connect`;
   };
 
   const disconnect = async (id: string) => {
-    await fetch("/api/accounts/disconnect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: id }) });
+    await fetch("/api/accounts/disconnect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accountId: id }),
+    });
     await loadAccounts();
     toast.success("تم فصل الحساب");
   };
@@ -124,22 +130,31 @@ export default function EmailCampaignTool() {
           email: row.email || row.Email || row["البريد"] || row["البريد الالكتروني"] || "",
         })).filter((item) => item.email);
         setRecipients((current) => [...current.filter((item) => item.email || item.name), ...imported]);
-        toast.success(`تمت إضافة ${imported.length} مستلم`);
+        toast.success(`تمت اضافة ${imported.length} مستلم`);
       },
-      error: () => toast.error("تعذر قراءة ملف CSV"),
+      error: () => toast.error("تعذر قراءة الملف"),
     });
   };
 
   const sendEmails = async () => {
-    const currentText = editorRef.current ? JSON.stringify(await editorRef.current.save()) : text;
-    if (provider !== "custom" && !accountId) return toast.error("اربط حساب المرسل واختره اولا");
-    setIsSending(true); setProgress(0); setSentCount(0); setFailedCount(0);
+    if (provider !== "custom" && !accountId) return toast.error("اربط حساب المرسل اولا");
+    if (!html.trim()) return toast.error("اكتب محتوى الرسالة");
+    setIsSending(true);
+    setProgress(0);
+    setSentCount(0);
+    setFailedCount(0);
     const validRecipients = recipients.filter((item) => item.email.trim());
     try {
       const response = await fetch("/api/sendEmails", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          provider, accountId, recipients: validRecipients, subject, text: currentText, useGreeting,
+          provider,
+          accountId,
+          recipients: validRecipients,
+          subject,
+          html,
+          useGreeting,
           customSmtp: provider === "custom" ? { ...customSmtp, port: Number(customSmtp.port) } : undefined,
         }),
       });
@@ -154,7 +169,8 @@ export default function EmailCampaignTool() {
       while (true) {
         const { value, done } = await reader.read();
         pending += decoder.decode(value || new Uint8Array(), { stream: !done });
-        const lines = pending.split("\n"); pending = lines.pop() || "";
+        const lines = pending.split("\n");
+        pending = lines.pop() || "";
         for (const line of lines) {
           if (!line.trim()) continue;
           const data = JSON.parse(line);
@@ -165,23 +181,24 @@ export default function EmailCampaignTool() {
         }
         if (done) break;
       }
-    } catch (error) { toast.error((error as Error).message); }
-    finally { setIsSending(false); }
+    } catch (error) {
+      toast.error(friendlyOAuthError((error as Error).message));
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const providerAccounts = accounts.filter((item) => item.provider === provider);
 
   return (
-    <div className="campaign-container container mx-auto max-w-4xl p-4" dir="rtl">
+    <div className="campaign-container container mx-auto max-w-5xl p-4" dir="rtl">
       <Card className="campaign-card">
-        <CardHeader className="campaign-header"><div className="campaign-brand"><span className="campaign-dot" /><span>Email Sender</span></div><CardTitle className="text-center text-3xl">نظام ارسال الحملات البريدية</CardTitle><p className="campaign-subtitle">انشئ وارسل حملتك من حساباتك المربوطة بكل سهولة</p></CardHeader>
-        <CardContent className="space-y-6">
-          {!persistentStoreConfigured && (
-            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-              التخزين الدائم غير مربوط. محليا يشتغل مؤقتا لكن على Vercel لازم تضيف Upstash Redis او Vercel KV حتى تبقى الحسابات المربوطة محفوظة.
-            </div>
-          )}
+        <CardHeader className="campaign-header">
+          <div className="campaign-brand"><span className="campaign-dot" /><span>Email Sender</span></div>
+          <CardTitle className="text-center text-3xl">ارسال حملة بريدية</CardTitle>
+        </CardHeader>
 
+        <CardContent className="space-y-6">
           <div className="space-y-3">
             <Label>مزود البريد</Label>
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -191,17 +208,13 @@ export default function EmailCampaignTool() {
                 </Button>
               ))}
             </div>
-            {provider === "microsoft" && <p className="text-sm text-muted-foreground">يدعم Outlook وHotmail وLive وMicrosoft 365 وايميلات GoDaddy المرتبطة باوتلوك</p>}
           </div>
 
           {provider !== "custom" ? (
-            <div className="space-y-3 rounded-lg border p-4">
+            <div className="space-y-3 rounded-2xl border p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h3 className="font-semibold">حسابات {providerLabels[provider]} المربوطة</h3>
-                  <p className="text-sm text-muted-foreground">اربط كل حساب مرة واحدة وبعدها اختره وقت الارسال</p>
-                </div>
-                <Button type="button" onClick={() => connectProvider(provider)}><Link2 className="ml-2 h-4 w-4" />ربط حساب جديد</Button>
+                <h3 className="font-semibold">حساب المرسل</h3>
+                <Button type="button" onClick={() => connectProvider(provider)}><Link2 className="ml-2 h-4 w-4" />ربط حساب</Button>
               </div>
               {providerAccounts.length ? (
                 <div className="space-y-2">
@@ -210,21 +223,21 @@ export default function EmailCampaignTool() {
                     <SelectContent>{providerAccounts.map((item) => <SelectItem key={item.id} value={item.id}>{item.email}</SelectItem>)}</SelectContent>
                   </Select>
                   {providerAccounts.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between rounded-md bg-muted p-2 text-sm">
+                    <div key={item.id} className="flex items-center justify-between rounded-xl bg-muted p-2 text-sm">
                       <span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4" />{item.email}</span>
                       <Button type="button" variant="ghost" size="sm" onClick={() => disconnect(item.id)}><Unplug className="ml-1 h-4 w-4" />فصل</Button>
                     </div>
                   ))}
                 </div>
-              ) : <p className="text-sm text-muted-foreground">ما فيه حساب مربوط للحين</p>}
+              ) : null}
             </div>
           ) : (
-            <div className="grid gap-4 rounded-lg border p-4 md:grid-cols-2">
+            <div className="grid gap-4 rounded-2xl border p-4 md:grid-cols-2">
               <div><Label>SMTP Server</Label><Input value={customSmtp.host} onChange={(e) => setCustomSmtp({ ...customSmtp, host: e.target.value })} placeholder="smtp.example.com" /></div>
               <div><Label>Port</Label><Input type="number" value={customSmtp.port} onChange={(e) => setCustomSmtp({ ...customSmtp, port: e.target.value })} /></div>
               <div><Label>البريد او اسم المستخدم</Label><Input value={customSmtp.username} onChange={(e) => setCustomSmtp({ ...customSmtp, username: e.target.value })} /></div>
               <div><Label>كلمة مرور التطبيق</Label><Input type="password" value={customSmtp.password} onChange={(e) => setCustomSmtp({ ...customSmtp, password: e.target.value })} /></div>
-              <div className="flex items-center gap-2"><Checkbox checked={customSmtp.secure} onCheckedChange={(checked) => setCustomSmtp({ ...customSmtp, secure: Boolean(checked) })} /><Label>SSL مباشر عادة مع Port 465</Label></div>
+              <div className="flex items-center gap-2"><Checkbox checked={customSmtp.secure} onCheckedChange={(checked) => setCustomSmtp({ ...customSmtp, secure: Boolean(checked) })} /><Label>SSL</Label></div>
             </div>
           )}
 
@@ -232,9 +245,58 @@ export default function EmailCampaignTool() {
             <TabsList className="grid w-full grid-cols-2"><TabsTrigger value="compose">الرسالة</TabsTrigger><TabsTrigger value="recipients">المستلمين</TabsTrigger></TabsList>
             <TabsContent value="compose" className="space-y-4">
               <div><Label>عنوان الرسالة</Label><Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="اكتب عنوان الرسالة" /></div>
-              <div><Label>محتوى الرسالة</Label><div id="editorjs" className="min-h-[220px] rounded-md border bg-white p-3 text-left" dir="ltr" /></div>
-              <div className="flex items-center gap-2"><Checkbox checked={useGreeting} onCheckedChange={(checked) => setUseGreeting(Boolean(checked))} /><Label>اضافة Dear واسم المستلم في بداية الرسالة</Label></div>
+
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label>محتوى الرسالة</Label>
+                  <div className="flex rounded-xl border bg-white p-1">
+                    <Button type="button" size="sm" variant={editorMode === "visual" ? "default" : "ghost"} onClick={() => setEditorMode("visual")}>تصميم</Button>
+                    <Button type="button" size="sm" variant={editorMode === "html" ? "default" : "ghost"} onClick={() => setEditorMode("html")}><Code2 className="ml-1 h-4 w-4" />HTML</Button>
+                    <Button type="button" size="sm" variant={editorMode === "preview" ? "default" : "ghost"} onClick={() => setEditorMode("preview")}><Eye className="ml-1 h-4 w-4" />معاينة</Button>
+                  </div>
+                </div>
+
+                {editorMode === "visual" && (
+                  <div className="html-editor-shell">
+                    <div className="html-editor-toolbar" dir="ltr">
+                      <Button type="button" variant="ghost" size="icon" onClick={() => runEditorCommand("undo")} title="Undo"><Undo2 className="h-4 w-4" /></Button>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => runEditorCommand("redo")} title="Redo"><Redo2 className="h-4 w-4" /></Button>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => runEditorCommand("bold")} title="Bold"><Bold className="h-4 w-4" /></Button>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => runEditorCommand("italic")} title="Italic"><Italic className="h-4 w-4" /></Button>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => runEditorCommand("underline")} title="Underline"><Underline className="h-4 w-4" /></Button>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => runEditorCommand("insertUnorderedList")} title="List"><List className="h-4 w-4" /></Button>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => runEditorCommand("insertOrderedList")} title="Numbered list"><ListOrdered className="h-4 w-4" /></Button>
+                    </div>
+                    <div
+                      ref={visualEditorRef}
+                      className="html-visual-editor"
+                      contentEditable
+                      suppressContentEditableWarning
+                      dir="rtl"
+                      onInput={(event) => setHtml(event.currentTarget.innerHTML)}
+                    />
+                  </div>
+                )}
+
+                {editorMode === "html" && (
+                  <textarea
+                    className="html-code-editor"
+                    dir="ltr"
+                    spellCheck={false}
+                    value={html}
+                    onChange={(event) => setHtml(event.target.value)}
+                    placeholder="الصق كود HTML هنا"
+                  />
+                )}
+
+                {editorMode === "preview" && (
+                  <iframe className="html-preview" title="معاينة الرسالة" srcDoc={html} sandbox="allow-same-origin" />
+                )}
+              </div>
+
+              <div className="flex items-center gap-2"><Checkbox checked={useGreeting} onCheckedChange={(checked) => setUseGreeting(Boolean(checked))} /><Label>اضافة Dear واسم المستلم</Label></div>
             </TabsContent>
+
             <TabsContent value="recipients" className="space-y-4">
               {recipients.map((recipient, index) => (
                 <motion.div key={index} className="flex gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -250,6 +312,7 @@ export default function EmailCampaignTool() {
             </TabsContent>
           </Tabs>
         </CardContent>
+
         <CardFooter className="flex-col gap-3">
           {isSending && <div className="w-full"><Progress value={progress} /><p className="mt-2 text-center text-sm">تم {sentCount} فشل {failedCount}</p></div>}
           <Button className="w-full" type="button" disabled={isSending} onClick={sendEmails}><Send className="ml-2 h-4 w-4" />{isSending ? "جاري الارسال" : "ارسال الحملة"}</Button>
