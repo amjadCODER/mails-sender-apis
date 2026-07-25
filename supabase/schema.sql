@@ -1,4 +1,4 @@
--- شغلي هذا الملف مرة واحدة داخل Supabase > SQL Editor
+--  Supabase > SQL Editor
 create extension if not exists pgcrypto;
 
 create table if not exists public.app_kv (
